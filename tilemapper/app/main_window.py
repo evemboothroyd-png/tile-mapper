@@ -29,7 +29,8 @@ different sets can be lined up however you like.</li>
 <li><b>Mirror</b> left-right: H.  <b>Flip</b> top-bottom: V.</li>
 <li><b>Layering:</b> tiles overlap freely; the newest one starts on top. Use the toolbar
 buttons <b>To Top</b> (⌘⇧]), <b>Up One</b> (⌘]), <b>Down One</b> (⌘[), and <b>To Bottom</b> (⌘⇧[).
-Up One and Down One only step past tiles the selection actually overlaps.</li>
+Up One and Down One only step past tiles the selection actually overlaps.
+White background around the edge of any tile is see-through, so lower tiles show.</li>
 <li><b>Delete:</b> ⌫.  <b>Duplicate:</b> ⌘D.  <b>Undo / Redo:</b> ⌘Z / ⇧⌘Z.</li>
 <li><b>Pan:</b> two-finger scroll, or hold Space and drag.  <b>Zoom:</b> pinch, or ⌘ + scroll,
 or ⌘+ / ⌘−.  <b>Fit the whole map:</b> ⌘0.</li>

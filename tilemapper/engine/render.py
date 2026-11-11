@@ -14,7 +14,6 @@ from .library import TileLibrary
 from .mapdoc import MapDocument, Placement
 
 WHITE = (255, 255, 255)
-_MAGIC = (255, 0, 254)
 
 
 def font(size_px: int):
@@ -34,32 +33,44 @@ def clear_white_surround(img: Image.Image, threshold: int = 28) -> Image.Image:
     """Make the white area that touches the edges transparent (RGBA result).
 
     White inside the artwork (not connected to the border) is kept.
+
+    Fast two-stage method: flood-fill the border-connected white on a reduced
+    copy (only blocks that are entirely white count, so the fill can't cross a
+    line), then grow that region back out at full size through white pixels to
+    get crisp edges.
     """
+    from PIL import ImageChops, ImageFilter
     rgb = img.convert("RGB")
     w, h = rgb.size
-    work = rgb.copy()
-    seeds = []
-    step = max(1, min(w, h) // 40)
-    for x in range(0, w, step):
-        seeds += [(x, 0), (x, h - 1)]
-    for y in range(0, h, step):
-        seeds += [(0, y), (w - 1, y)]
-    for s in seeds:
-        px = work.getpixel(s)
-        if px == _MAGIC:
-            continue
-        if min(px) >= 255 - threshold:
-            ImageDraw.floodfill(work, s, _MAGIC, thresh=threshold)
-    # pixels painted magic become transparent
-    r, g, b = work.split()
-    mask = Image.eval(r, lambda v: 255 if v == _MAGIC[0] else 0)
-    mg = Image.eval(g, lambda v: 255 if v == _MAGIC[1] else 0)
-    mb = Image.eval(b, lambda v: 255 if v == _MAGIC[2] else 0)
-    from PIL import ImageChops
-    magic = ImageChops.multiply(ImageChops.multiply(mask, mg), mb)
-    alpha = ImageChops.invert(magic)
+    r, g, b = rgb.split()
+    lo = ImageChops.darker(ImageChops.darker(r, g), b)          # min channel
+    white = lo.point(lambda v: 255 if v >= 255 - threshold else 0)
+    if white.getbbox() is None:                                  # no white at all
+        out = rgb.convert("RGBA")
+        return out
+
+    step = max(1, -(-max(w, h) // 500))                          # ceil(max/500)
+    small = white.reduce(step) if step > 1 else white.copy()
+    small = small.point(lambda v: 255 if v == 255 else 0)        # fully white blocks
+    sw, sh = small.size
+    seeds = [(x, 0) for x in range(sw)] + [(x, sh - 1) for x in range(sw)] + \
+            [(0, y) for y in range(sh)] + [(sw - 1, y) for y in range(sh)]
+    for sd in seeds:
+        if small.getpixel(sd) == 255:
+            ImageDraw.floodfill(small, sd, 128, thresh=0)
+    region = small.point(lambda v: 255 if v == 128 else 0)
+    if step > 1:
+        region = region.resize((sw * step, sh * step), Image.NEAREST).crop((0, 0, w, h))
+    cur = ImageChops.darker(region, white)
+    # grow through white pixels to fill the partly white blocks along the edges
+    grow = ImageFilter.MaxFilter(3)
+    for _ in range(2 * step + 2):
+        nxt = ImageChops.darker(cur.filter(grow), white)
+        if ImageChops.difference(nxt, cur).getbbox() is None:
+            break
+        cur = nxt
     out = rgb.convert("RGBA")
-    out.putalpha(alpha)
+    out.putalpha(ImageChops.invert(cur))
     return out
 
 
@@ -72,7 +83,7 @@ class TileRenderer:
         self._cache_items = cache_items
 
     def tile_image(self, p: Placement, ppi: float) -> Optional[Image.Image]:
-        key = (p.tile_id, round(ppi, 3), p.rotation, p.flip_h, p.flip_v, p.floating)
+        key = (p.tile_id, round(ppi, 3), p.rotation, p.flip_h, p.flip_v)
         if key in self._cache:
             self._cache.move_to_end(key)
             return self._cache[key]
@@ -87,8 +98,7 @@ class TileRenderer:
         size = (max(1, round(p.w_in * ppi)), max(1, round(p.h_in * ppi)))
         if im.size != size:
             im = im.resize(size, Image.LANCZOS)
-        if p.floating:
-            im = clear_white_surround(im)
+        im = clear_white_surround(im)          # white edges are see-through on every tile
         im = transform(im, p.rotation, p.flip_h, p.flip_v)
         self._cache[key] = im
         if len(self._cache) > self._cache_items:

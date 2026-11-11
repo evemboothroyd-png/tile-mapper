@@ -240,3 +240,25 @@ def test_overview_png_labels(lib, tmp_path):
 def test_empty_map_errors(lib, tmp_path):
     with pytest.raises(export.ExportError):
         export.fullsize_png(MapDocument(), TileRenderer(lib), str(tmp_path / "x.png"))
+
+
+def test_white_surround_is_clear_but_inner_white_kept():
+    from PIL import Image, ImageDraw
+    from tilemapper.engine.render import clear_white_surround
+    im = Image.new("RGB", (900, 900), "white")
+    d = ImageDraw.Draw(im)
+    d.rectangle((100, 100, 800, 800), outline="black", width=1)   # thin outline, white inside
+    a = clear_white_surround(im).getchannel("A")
+    assert a.getpixel((10, 10)) == 0 and a.getpixel((99, 450)) == 0       # outside: clear
+    assert a.getpixel((450, 450)) == 255 and a.getpixel((101, 450)) == 255  # inside: kept
+    assert a.getpixel((100, 450)) == 255                                    # the line itself
+
+
+def test_every_tile_gets_clear_white_edges(lib):
+    from PIL import Image
+    doc = MapDocument()
+    p = place(lib, "Town/Warf/ATCB01 Adventure Town Canals Boat.jpg", 0, 0)
+    assert not p.floating
+    doc.add(p)
+    img = TileRenderer(lib).tile_image(p, 50)
+    assert img.mode == "RGBA" and img.getpixel((1, 1))[3] == 0
