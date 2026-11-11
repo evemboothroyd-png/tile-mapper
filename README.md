@@ -4,8 +4,7 @@ A Mac app for building tabletop battle maps from tile art and printing them at t
 1-inch-grid scale.
 
 * Browse your tile folder by category, with search and thumbnails.
-* Drag tiles onto an endless map. Tiles snap to whole-tile (6") spaces; odd-sized and floating
-  pieces snap to 1". Hold ⌥ Option to snap to 1".
+* Drag tiles onto an endless map. Tiles snap one grid square (1") at a time, so sets mix freely.
 * Turn (R / ⇧R), mirror (H), flip (V), float on top (F), duplicate (⌘D), undo (⌘Z).
 * Print / Export:
   * Overview of the whole map on one page (PDF or PNG), with or without tile codes.

@@ -19,15 +19,8 @@ WORLD_IN = 2000.0             # the sheet extends this far each way (≈166 feet
 
 
 def snap_step(p: Placement) -> float:
-    """Whole-tile snapping for 6"-multiple tiles, 1" for odd/floating pieces."""
-    mods = QApplication.keyboardModifiers()
-    if mods & Qt.KeyboardModifier.AltModifier:
-        return FINE_UNIT_IN
-    if p.floating:
-        return FINE_UNIT_IN
-    if p.w_in % TILE_UNIT_IN or p.h_in % TILE_UNIT_IN:
-        return FINE_UNIT_IN
-    return TILE_UNIT_IN
+    """Every tile moves one grid square (1 inch) at a time."""
+    return FINE_UNIT_IN
 
 
 class TileItem(QGraphicsPixmapItem):

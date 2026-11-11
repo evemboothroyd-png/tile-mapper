@@ -22,8 +22,8 @@ MAX_UNDO = 200
 HELP_TEXT = """<h3>Building a map</h3>
 <ul>
 <li><b>Add a tile:</b> drag it from the list onto the map, or double-click it.</li>
-<li><b>Move:</b> drag. Tiles snap to whole-tile (6-inch) spaces; odd-sized and floating
-pieces snap to 1 inch. Hold <b>⌥ Option</b> while dragging to snap to 1 inch.</li>
+<li><b>Move:</b> drag. Tiles snap one grid square (1 inch) at a time, so tiles from
+different sets can be lined up however you like.</li>
 <li><b>Select several:</b> drag a box around them, or ⌘-click.</li>
 <li><b>Turn:</b> R (clockwise) or ⇧R (counter-clockwise).</li>
 <li><b>Mirror</b> left-right: H.  <b>Flip</b> top-bottom: V.</li>

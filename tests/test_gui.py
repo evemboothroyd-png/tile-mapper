@@ -44,6 +44,11 @@ def test_window_workflow(app, tmp_path):
     app.processEvents()
     assert len(w.doc.placements) == 3
     assert w.doc.placements[0].x == 0 and w.doc.placements[0].y == 0
+    # every tile snaps one square (1") at a time
+    w._drop_tile("Dungeon/IT12 Ice Temple.jpg", 30.4, 3.6)
+    it12 = w.doc.placements[-1]
+    assert (it12.x, it12.y) == (27, 1)
+    w.scene.delete_selected()
 
     # rotate / mirror / float the boat (it is selected after placing)
     w.a_rot_cw.trigger()
