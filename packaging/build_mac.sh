@@ -24,5 +24,13 @@ rm -rf build/dmg && mkdir -p build/dmg
 cp -R "dist/Tile Mapper.app" build/dmg/
 ln -s /Applications build/dmg/Applications
 cp packaging/READ_ME_FIRST.txt build/dmg/
-hdiutil create -volname "Tile Mapper" -srcfolder build/dmg -ov -format UDZO "$DMG"
+# hdiutil is occasionally "Resource busy" on build machines; retry a few times
+for attempt in 1 2 3 4 5; do
+  if hdiutil create -volname "Tile Mapper" -srcfolder build/dmg -ov -format UDZO "$DMG"; then
+    break
+  fi
+  echo "hdiutil failed (attempt $attempt), retrying..."
+  sleep $((attempt * 5))
+  if [ "$attempt" = 5 ]; then exit 1; fi
+done
 echo "Built $DMG"
