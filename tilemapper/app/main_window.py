@@ -28,8 +28,7 @@ different sets can be lined up however you like.</li>
 <li><b>Turn:</b> R (clockwise) or ⇧R (counter-clockwise).</li>
 <li><b>Mirror</b> left-right: H.  <b>Flip</b> top-bottom: V.</li>
 <li><b>Layering:</b> tiles overlap freely; the newest one starts on top. Use the toolbar
-buttons <b>To Top</b> (⌘⇧]), <b>Up One</b> (⌘]), <b>Down One</b> (⌘[), and <b>To Bottom</b> (⌘⇧[).
-Up One and Down One only step past tiles the selection actually overlaps.
+buttons <b>To Top</b> (⌘⇧]) and <b>To Bottom</b> (⌘⇧[).
 White background around the edge of any tile is see-through, so lower tiles show.</li>
 <li><b>Delete:</b> ⌫.  <b>Duplicate:</b> ⌘D.  <b>Undo / Redo:</b> ⌘Z / ⇧⌘Z.</li>
 <li><b>Pan:</b> two-finger scroll, or hold Space and drag.  <b>Zoom:</b> pinch, or ⌘ + scroll,
@@ -151,16 +150,12 @@ class MainWindow(QMainWindow):
                                 "Flip the selected tiles top to bottom (V)")
         self.a_front = self._act("Bring to Front", self.scene.bring_to_front, "Ctrl+Shift+]",
                                  "Put the selected tiles on top of everything (⌘⇧])")
-        self.a_forward = self._act("Bring Forward", self.scene.bring_forward, "Ctrl+]",
-                                   "Lift the selected tiles above the next tile they overlap (⌘])")
-        self.a_backward = self._act("Send Backward", self.scene.send_backward, "Ctrl+[",
-                                    "Tuck the selected tiles under the next tile they overlap (⌘[)")
         self.a_back = self._act("Send to Back", self.scene.send_to_back, "Ctrl+Shift+[",
                                 "Put the selected tiles under everything around them (⌘⇧[)")
         for a in (self.a_rot_cw, self.a_rot_ccw, self.a_mirror, self.a_flip):
             m.addAction(a)
         m.addSeparator()
-        for a in (self.a_front, self.a_forward, self.a_backward, self.a_back):
+        for a in (self.a_front, self.a_back):
             m.addAction(a)
 
         # View
@@ -195,8 +190,7 @@ class MainWindow(QMainWindow):
             tb.addAction(b)
             a._tb = b
         tb.addSeparator()
-        for a, label in ((self.a_front, "⤒ To Top"), (self.a_forward, "↑ Up One"),
-                         (self.a_backward, "↓ Down One"), (self.a_back, "⤓ To Bottom")):
+        for a, label in ((self.a_front, "⤒ To Top"), (self.a_back, "⤓ To Bottom")):
             b = QAction(label, self)
             b.setToolTip(a.toolTip())
             b.triggered.connect(a.trigger)
@@ -519,8 +513,7 @@ class MainWindow(QMainWindow):
             return
         has = bool(sel)
         for a in (self.a_rot_cw, self.a_rot_ccw, self.a_mirror, self.a_flip,
-                  self.a_delete, self.a_dup, self.a_front, self.a_forward,
-                  self.a_backward, self.a_back):
+                  self.a_delete, self.a_dup, self.a_front, self.a_back):
             a.setEnabled(has)
             if hasattr(a, "_tb"):
                 a._tb.setEnabled(has)

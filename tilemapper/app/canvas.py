@@ -222,12 +222,6 @@ class MapScene(QGraphicsScene):
     def send_to_back(self):
         self._layer("send_to_back", "Send to back")
 
-    def bring_forward(self):
-        self._layer("bring_forward", "Bring forward")
-
-    def send_backward(self):
-        self._layer("send_backward", "Send backward")
-
 
 def rotate(p: Placement, deg: int):
     p.rotation = (p.rotation + deg) % 360

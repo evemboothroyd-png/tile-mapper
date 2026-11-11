@@ -1,4 +1,4 @@
-**New in 0.1.2 and 0.1.3:** the "Float on top" box is gone. Every tile overlaps freely, and dropping a tile on another no longer replaces it. New toolbar buttons control which tile is on top: **To Top**, **Up One**, **Down One**, and **To Bottom** (also in the Tile menu, with ⌘⇧], ⌘], ⌘[, and ⌘⇧[). White background around the edge of every tile is now see-through, so whatever is underneath shows; white inside the artwork stays white.
+**New in 0.1.2–0.1.4:** the "Float on top" box is gone. Every tile overlaps freely, and dropping a tile on another no longer replaces it. New toolbar buttons control which tile is on top: **To Top** and **To Bottom** (also in the Tile menu, with ⌘⇧] and ⌘⇧[). White background around the edge of every tile is now see-through, so whatever is underneath shows; white inside the artwork stays white.
 
 **Which file do I need?** Apple menu ▸ About This Mac.
 - *Chip: Apple M1/M2/M3/M4…* → download the file ending in **arm64.dmg**
