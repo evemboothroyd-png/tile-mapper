@@ -51,18 +51,28 @@ def test_window_workflow(app, tmp_path):
     w.scene.delete_selected()
     w.scene.items_by_uid[w.doc.placements[-1].uid].setSelected(True)   # the boat again
 
-    # rotate / mirror / float the boat (it is selected after placing)
+    # rotate / mirror the boat
     w.a_rot_cw.trigger()
     w.a_mirror.trigger()
-    w.float_box.click()
     boat = w.doc.placements[-1]
-    assert boat.rotation == 90 and boat.floating and (boat.flip_v or boat.flip_h)
+    assert boat.rotation == 90 and (boat.flip_v or boat.flip_h)
+    assert not hasattr(w, "float_box")
 
-    # undo / redo
+    # layering: send the boat to the bottom, then back to the top
+    boat_uid = boat.uid
+    w.a_back.trigger()
+    assert w.doc.placements[0].uid == boat_uid
+    item = w.scene.items_by_uid[boat_uid]
+    assert item.zValue() < min(i.zValue() for u, i in w.scene.items_by_uid.items() if u != boat_uid)
+
+    # undo / redo the layering
     w.undo()
-    assert not w.doc.placements[-1].floating
+    assert w.doc.placements[-1].uid == boat_uid
     w.redo()
-    assert w.doc.placements[-1].floating
+    assert w.doc.placements[0].uid == boat_uid
+    w.scene.items_by_uid[boat_uid].setSelected(True)
+    w.a_front.trigger()
+    assert w.doc.placements[-1].uid == boat_uid
 
     # delete and duplicate
     w.scene.clearSelection()

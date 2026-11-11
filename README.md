@@ -5,7 +5,7 @@ A Mac app for building tabletop battle maps from tile art and printing them at t
 
 * Browse your tile folder by category, with search and thumbnails.
 * Drag tiles onto an endless map. Tiles snap one grid square (1") at a time, so sets mix freely.
-* Turn (R / ⇧R), mirror (H), flip (V), float on top (F), duplicate (⌘D), undo (⌘Z).
+* Turn (R / ⇧R), mirror (H), flip (V), layering (To Top ⌘⇧], Up One ⌘], Down One ⌘[, To Bottom ⌘⇧[), duplicate (⌘D), undo (⌘Z).
 * Print / Export:
   * Overview of the whole map on one page (PDF or PNG), with or without tile codes.
   * Full size split over printer pages (US Letter, Legal, Tabloid, A4, A3) with an assembly

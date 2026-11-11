@@ -111,10 +111,39 @@ def test_doc_roundtrip(lib, tmp_path):
     doc.save(str(p))
     d2 = MapDocument.load(str(p))
     assert [q.rect for q in d2.placements] == [q.rect for q in doc.placements]
-    assert d2.draw_order()[-1].floating
-    # replacing a tile in the same spot
+    assert d2.draw_order()[-1].floating          # legacy flag survives a round trip
+    # a tile dropped in the same spot stacks on top; nothing is replaced
     doc.add(place(lib, "Dungeon/IT12 Ice Temple.jpg", 0, 0))
-    assert sum(1 for q in doc.placements if q.rect == (0, 0, 6, 6)) == 1
+    assert sum(1 for q in doc.placements if q.rect == (0, 0, 6, 6)) == 2
+    assert doc.draw_order()[-1].code.startswith("IT12")
+
+
+def test_layering(lib):
+    doc = sample_map(lib)
+    order = lambda: [q.code.split()[0] for q in doc.placements]
+    boat = doc.placements[-1].uid
+    dv = doc.placements[0].uid
+    doc.send_to_back(boat)
+    assert order()[0] == "ATCB01"
+    doc.bring_to_front(boat)
+    assert order()[-1] == "ATCB01"
+    # one step down: just under the nearest overlapping tile, skipping ones it doesn't touch
+    b = doc.find(boat)
+    below = [q for q in doc.placements[:-1] if doc.overlaps(b, q)]
+    assert below and doc.send_backward([boat])
+    i = doc.placements.index(b)
+    assert doc.placements[i + 1] is below[-1]
+    assert doc.bring_forward([boat])
+    assert doc.placements.index(b) == doc.placements.index(below[-1]) + 1
+    # several at once keep their own order
+    doc.bring_to_front([dv, boat])
+    assert order()[-2:] == ["DV328", "ATCB01"]
+    doc.send_to_back([dv, boat])
+    assert order()[:2] == ["DV328", "ATCB01"]
+    # nothing overlapping -> no change
+    far = place(lib, "Dungeon/IT12 Ice Temple.jpg", 100, 100)
+    doc.add(far)
+    assert not doc.send_backward([far.uid]) and not doc.bring_forward([far.uid])
 
 
 def test_render_scale_and_transforms(lib):

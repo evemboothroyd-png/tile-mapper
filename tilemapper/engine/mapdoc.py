@@ -30,7 +30,7 @@ class Placement:
     rotation: int = 0        # 0, 90, 180, 270 clockwise
     flip_h: bool = False     # mirror left-right (applied before rotation)
     flip_v: bool = False     # flip top-bottom (applied before rotation)
-    floating: bool = False   # drawn above ordinary tiles; white surround clear
+    floating: bool = False   # legacy flag: white surround drawn see-through
     code: str = ""           # kept so missing tiles can still be identified
     uid: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
 
@@ -54,16 +54,12 @@ class MapDocument:
 
     # ----------------------------------------------------------- ordering
     def draw_order(self) -> List[Placement]:
-        """Ordinary tiles first (in placement order), floating pieces on top."""
-        base = [p for p in self.placements if not p.floating]
-        top = [p for p in self.placements if p.floating]
-        return base + top
+        """Bottom to top: the order of the placement list."""
+        return list(self.placements)
 
     # ------------------------------------------------------------ editing
-    def add(self, p: Placement, replace_same_spot: bool = True) -> Placement:
-        if replace_same_spot and not p.floating:
-            self.placements = [q for q in self.placements
-                               if q.floating or q.rect != p.rect]
+    def add(self, p: Placement) -> Placement:
+        """New tiles go on top. Nothing underneath is replaced."""
         self.placements.append(p)
         return p
 
@@ -76,11 +72,66 @@ class MapDocument:
                 return p
         return None
 
-    def bring_to_front(self, uid: str):
-        p = self.find(uid)
-        if p:
-            self.placements.remove(p)
-            self.placements.append(p)
+    # ------------------------------------------------------------ layering
+    def _split(self, uids):
+        uids = set(uids)
+        chosen = [p for p in self.placements if p.uid in uids]
+        rest = [p for p in self.placements if p.uid not in uids]
+        return chosen, rest
+
+    def bring_to_front(self, uids):
+        """Put the chosen tiles above everything (keeping their own order)."""
+        if isinstance(uids, str):
+            uids = [uids]
+        chosen, rest = self._split(uids)
+        self.placements = rest + chosen
+
+    def send_to_back(self, uids):
+        """Put the chosen tiles under everything (keeping their own order)."""
+        if isinstance(uids, str):
+            uids = [uids]
+        chosen, rest = self._split(uids)
+        self.placements = chosen + rest
+
+    @staticmethod
+    def overlaps(a: "Placement", b: "Placement") -> bool:
+        ax, ay, aw, ah = a.rect
+        bx, by, bw, bh = b.rect
+        return ax < bx + bw and bx < ax + aw and ay < by + bh and by < ay + ah
+
+    def bring_forward(self, uids) -> bool:
+        """Lift each chosen tile just above the next tile above it that it overlaps."""
+        if isinstance(uids, str):
+            uids = [uids]
+        uids = set(uids)
+        changed = False
+        for p in [q for q in reversed(self.placements) if q.uid in uids]:
+            i = self.placements.index(p)
+            for j in range(i + 1, len(self.placements)):
+                q = self.placements[j]
+                if q.uid not in uids and self.overlaps(p, q):
+                    self.placements.pop(i)
+                    self.placements.insert(j, p)
+                    changed = True
+                    break
+        return changed
+
+    def send_backward(self, uids) -> bool:
+        """Drop each chosen tile just under the next tile below it that it overlaps."""
+        if isinstance(uids, str):
+            uids = [uids]
+        uids = set(uids)
+        changed = False
+        for p in [q for q in self.placements if q.uid in uids]:
+            i = self.placements.index(p)
+            for j in range(i - 1, -1, -1):
+                q = self.placements[j]
+                if q.uid not in uids and self.overlaps(p, q):
+                    self.placements.pop(i)
+                    self.placements.insert(j, p)
+                    changed = True
+                    break
+        return changed
 
     # ------------------------------------------------------------- bounds
     def bounds(self) -> Optional[Tuple[float, float, float, float]]:

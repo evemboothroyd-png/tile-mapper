@@ -27,8 +27,9 @@ different sets can be lined up however you like.</li>
 <li><b>Select several:</b> drag a box around them, or ⌘-click.</li>
 <li><b>Turn:</b> R (clockwise) or ⇧R (counter-clockwise).</li>
 <li><b>Mirror</b> left-right: H.  <b>Flip</b> top-bottom: V.</li>
-<li><b>Float on top:</b> F, or tick the box in the toolbar. Floating pieces (like boats) sit
-above ordinary tiles, and white background around them becomes see-through.</li>
+<li><b>Layering:</b> tiles overlap freely; the newest one starts on top. Use the toolbar
+buttons <b>To Top</b> (⌘⇧]), <b>Up One</b> (⌘]), <b>Down One</b> (⌘[), and <b>To Bottom</b> (⌘⇧[).
+Up One and Down One only step past tiles the selection actually overlaps.</li>
 <li><b>Delete:</b> ⌫.  <b>Duplicate:</b> ⌘D.  <b>Undo / Redo:</b> ⌘Z / ⇧⌘Z.</li>
 <li><b>Pan:</b> two-finger scroll, or hold Space and drag.  <b>Zoom:</b> pinch, or ⌘ + scroll,
 or ⌘+ / ⌘−.  <b>Fit the whole map:</b> ⌘0.</li>
@@ -147,14 +148,19 @@ class MainWindow(QMainWindow):
                                   "Mirror the selected tiles left to right (H)")
         self.a_flip = self._act("Flip Top–Bottom", lambda: self._modify(self._flip, "Flip"), "V",
                                 "Flip the selected tiles top to bottom (V)")
-        self.a_float = self._act("Float on Top", self._toggle_float, "F",
-                                 "Float the selected pieces above ordinary tiles (F)", checkable=True)
-        self.a_front = self._act("Bring to Front", self.scene.bring_to_front, "Ctrl+]")
+        self.a_front = self._act("Bring to Front", self.scene.bring_to_front, "Ctrl+Shift+]",
+                                 "Put the selected tiles on top of everything (⌘⇧])")
+        self.a_forward = self._act("Bring Forward", self.scene.bring_forward, "Ctrl+]",
+                                   "Lift the selected tiles above the next tile they overlap (⌘])")
+        self.a_backward = self._act("Send Backward", self.scene.send_backward, "Ctrl+[",
+                                    "Tuck the selected tiles under the next tile they overlap (⌘[)")
+        self.a_back = self._act("Send to Back", self.scene.send_to_back, "Ctrl+Shift+[",
+                                "Put the selected tiles under everything around them (⌘⇧[)")
         for a in (self.a_rot_cw, self.a_rot_ccw, self.a_mirror, self.a_flip):
             m.addAction(a)
         m.addSeparator()
-        m.addAction(self.a_float)
-        m.addAction(self.a_front)
+        for a in (self.a_front, self.a_forward, self.a_backward, self.a_back):
+            m.addAction(a)
 
         # View
         m = mb.addMenu("&View")
@@ -188,12 +194,13 @@ class MainWindow(QMainWindow):
             tb.addAction(b)
             a._tb = b
         tb.addSeparator()
-        from PySide6.QtWidgets import QCheckBox
-        self.float_box = QCheckBox("Float on top")
-        self.float_box.setToolTip("Floating pieces sit above ordinary tiles and their white "
-                                  "surround becomes see-through (F)")
-        self.float_box.clicked.connect(self._float_box_clicked)
-        tb.addWidget(self.float_box)
+        for a, label in ((self.a_front, "⤒ To Top"), (self.a_forward, "↑ Up One"),
+                         (self.a_backward, "↓ Down One"), (self.a_back, "⤓ To Bottom")):
+            b = QAction(label, self)
+            b.setToolTip(a.toolTip())
+            b.triggered.connect(a.trigger)
+            tb.addAction(b)
+            a._tb = b
         tb.addSeparator()
         d = QAction("⌫ Delete", self)
         d.triggered.connect(self.scene.delete_selected)
@@ -310,9 +317,9 @@ class MainWindow(QMainWindow):
             return
         # don't land exactly on top of an existing tile: step right until free
         for _ in range(200):
-            if not any(q.rect == p.rect and not q.floating for q in self.doc.placements):
+            if not any(q.rect == p.rect for q in self.doc.placements):
                 break
-            p.x += snap_step(p) if p.floating else max(p.footprint[0], 1)
+            p.x += max(p.footprint[0], 1)
         self.scene.place(p)
         self.view.setFocus()
 
@@ -334,23 +341,6 @@ class MainWindow(QMainWindow):
 
     def _modify(self, fn, label):
         self.scene.modify_selected(fn, label)
-
-    def _toggle_float(self):
-        sel = self.scene.selected_items()
-        if not sel:
-            self.a_float.setChecked(False)
-            return
-        target = not all(i.placement.floating for i in sel)
-        self._set_float(target)
-
-    def _float_box_clicked(self, checked):
-        self._set_float(bool(checked))
-
-    def _set_float(self, value: bool):
-        def f(p):
-            p.floating = value
-        self.scene.modify_selected(f, "Float on top" if value else "Stop floating")
-        self._on_selection()
 
     def _select_all(self):
         for item in self.scene.items_by_uid.values():
@@ -527,24 +517,13 @@ class MainWindow(QMainWindow):
         except RuntimeError:
             return
         has = bool(sel)
-        for a in (self.a_rot_cw, self.a_rot_ccw, self.a_mirror, self.a_flip, self.a_float,
-                  self.a_delete, self.a_dup, self.a_front):
+        for a in (self.a_rot_cw, self.a_rot_ccw, self.a_mirror, self.a_flip,
+                  self.a_delete, self.a_dup, self.a_front, self.a_forward,
+                  self.a_backward, self.a_back):
             a.setEnabled(has)
             if hasattr(a, "_tb"):
                 a._tb.setEnabled(has)
         self._tb_delete.setEnabled(has)
-        self.float_box.setEnabled(has)
-        all_float = has and all(i.placement.floating for i in sel)
-        any_float = has and any(i.placement.floating for i in sel)
-        self.float_box.blockSignals(True)
-        if has and any_float and not all_float:
-            self.float_box.setTristate(True)
-            self.float_box.setCheckState(Qt.CheckState.PartiallyChecked)
-        else:
-            self.float_box.setTristate(False)
-            self.float_box.setChecked(all_float)
-        self.float_box.blockSignals(False)
-        self.a_float.setChecked(all_float)
         if len(sel) == 1:
             p = sel[0].placement
             info = self.library.get(p.tile_id) if self.library else None

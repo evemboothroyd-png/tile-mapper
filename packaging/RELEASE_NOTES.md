@@ -1,3 +1,5 @@
+**New in 0.1.2:** the "Float on top" box is gone. Every tile overlaps freely, and dropping a tile on another no longer replaces it. New toolbar buttons control which tile is on top: **To Top**, **Up One**, **Down One**, and **To Bottom** (also in the Tile menu, with ⌘⇧], ⌘], ⌘[, and ⌘⇧[).
+
 **Which file do I need?** Apple menu ▸ About This Mac.
 - *Chip: Apple M1/M2/M3/M4…* → download the file ending in **arm64.dmg**
 - *Processor: Intel…* → download the file ending in **x86_64.dmg**

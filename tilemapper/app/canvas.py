@@ -14,7 +14,6 @@ from .qtutil import pil_to_qpixmap
 SCENE_PER_IN = 100.0          # scene units per inch
 PREVIEW_PPI = 75              # pixels per inch used for on-screen tiles
 MIME_TILE = "application/x-tilemapper-tile"
-FLOAT_Z = 100000.0
 WORLD_IN = 2000.0             # the sheet extends this far each way (≈166 feet)
 
 
@@ -56,7 +55,7 @@ class TileItem(QGraphicsPixmapItem):
         from PySide6.QtGui import QTransform
         self.setTransform(QTransform.fromScale(sx, sy))
         self.setPos(p.x * SCENE_PER_IN, p.y * SCENE_PER_IN)
-        self.setZValue((FLOAT_Z if p.floating else 0.0) + self._map_scene.z_for(p))
+        self.setZValue(self._map_scene.z_for(p))
         info = self._map_scene.renderer.library.get(p.tile_id)
         title = f" — {info.title}" if info and info.title else ""
         extras = []
@@ -66,8 +65,6 @@ class TileItem(QGraphicsPixmapItem):
             extras.append("mirrored")
         if p.flip_v:
             extras.append("flipped")
-        if p.floating:
-            extras.append("floating")
         self.setToolTip(f"{p.code}{title}" + (f"\n({', '.join(extras)})" if extras else ""))
 
     # --- snapping while dragging
@@ -147,17 +144,11 @@ class MapScene(QGraphicsScene):
     def refresh_z(self):
         for item in self.items_by_uid.values():
             p = item.placement
-            item.setZValue((FLOAT_Z if p.floating else 0.0) + self.z_for(p))
+            item.setZValue(self.z_for(p))
 
     # ------------------------------------------------------------ editing
     def place(self, p: Placement, select: bool = True) -> TileItem:
-        before = {q.uid for q in self.doc.placements}
         self.doc.add(p)
-        # remove items for tiles the new one replaced
-        for uid in before - {q.uid for q in self.doc.placements}:
-            item = self.items_by_uid.pop(uid, None)
-            if item:
-                self.removeItem(item)
         item = self._add_item(p)
         self.refresh_z()
         if select:
@@ -174,17 +165,6 @@ class MapScene(QGraphicsScene):
             p = item.placement
             p.x = round(item.pos().x() / SCENE_PER_IN, 4)
             p.y = round(item.pos().y() / SCENE_PER_IN, 4)
-        # a plain tile dropped exactly onto another plain tile replaces it
-        moved = {i.placement.uid for i in self.selected_items()}
-        for uid in list(moved):
-            p = self.doc.find(uid)
-            if p and not p.floating:
-                for q in list(self.doc.placements):
-                    if q.uid != uid and not q.floating and q.uid not in moved and q.rect == p.rect:
-                        self.doc.remove(q.uid)
-                        item = self.items_by_uid.pop(q.uid, None)
-                        if item:
-                            self.removeItem(item)
         self.changed_doc.emit("Move")
 
     def delete_selected(self):
@@ -226,11 +206,27 @@ class MapScene(QGraphicsScene):
             it.setSelected(True)
         self.changed_doc.emit("Duplicate")
 
+    def _layer(self, method: str, label: str):
+        uids = [i.placement.uid for i in self.selected_items()]
+        if not uids:
+            return
+        before = [p.uid for p in self.doc.placements]
+        getattr(self.doc, method)(uids)
+        if [p.uid for p in self.doc.placements] != before:
+            self.refresh_z()
+            self.changed_doc.emit(label)
+
     def bring_to_front(self):
-        for item in self.selected_items():
-            self.doc.bring_to_front(item.placement.uid)
-        self.refresh_z()
-        self.changed_doc.emit("Bring to front")
+        self._layer("bring_to_front", "Bring to front")
+
+    def send_to_back(self):
+        self._layer("send_to_back", "Send to back")
+
+    def bring_forward(self):
+        self._layer("bring_forward", "Bring forward")
+
+    def send_backward(self):
+        self._layer("send_backward", "Send backward")
 
 
 def rotate(p: Placement, deg: int):
