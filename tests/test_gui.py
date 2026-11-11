@@ -49,6 +49,7 @@ def test_window_workflow(app, tmp_path):
     it12 = w.doc.placements[-1]
     assert (it12.x, it12.y) == (27, 1)
     w.scene.delete_selected()
+    w.scene.items_by_uid[w.doc.placements[-1].uid].setSelected(True)   # the boat again
 
     # rotate / mirror / float the boat (it is selected after placing)
     w.a_rot_cw.trigger()
