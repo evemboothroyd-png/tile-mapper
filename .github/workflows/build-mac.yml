@@ -1,0 +1,58 @@
+name: Build Mac app
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14          # Apple Silicon (M1/M2/M3/M4)
+            label: apple-silicon
+          - runner: macos-15-intel    # Intel Macs
+            label: intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest pyinstaller
+
+      - name: Test (engine + headless window)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q tests
+
+      - name: Build app and DMG
+        run: bash packaging/build_mac.sh
+
+      - name: Smoke-test the built app starts
+        run: |
+          "dist/Tile Mapper.app/Contents/MacOS/Tile Mapper" &
+          PID=$!
+          sleep 15
+          if kill -0 $PID 2>/dev/null; then echo "App is running"; kill $PID; else echo "App exited early"; exit 1; fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Tile-Mapper-${{ matrix.label }}
+          path: dist/*.dmg
+          retention-days: 30
+
+      - name: Attach to release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.dmg

@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+build/
+dist/
+packaging/icon.icns
+.pytest_cache/
+.DS_Store
+.tilemapper_cache/
