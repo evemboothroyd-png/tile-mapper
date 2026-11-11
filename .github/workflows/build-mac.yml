@@ -53,8 +53,20 @@ jobs:
           path: dist/*.dmg
           retention-days: 30
 
-      - name: Attach to release (tags only)
+      - name: Publish to the "Latest build" release page
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-build
+          name: Tile Mapper — latest build
+          body_path: packaging/RELEASE_NOTES.md
+          prerelease: false
+          make_latest: true
+          files: dist/*.dmg
+
+      - name: Attach to versioned release (tags only)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
+          body_path: packaging/RELEASE_NOTES.md
           files: dist/*.dmg
