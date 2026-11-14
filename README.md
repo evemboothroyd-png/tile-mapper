@@ -8,6 +8,7 @@ A Mac app for building tabletop battle maps from tile art and printing them at t
 * Background image for tracing real places: set its scale from a known distance, move it,
   fade it, and flip it over or under the tiles (B). On screen only — never printed or exported.
 * Zoom with a trackpad pinch, a mouse wheel, ⌘ + scroll, ⌘+ / ⌘−, or the toolbar buttons.
+* Copy, cut, and paste sections (⌘C / ⌘X / ⌘V); turning, mirroring, and flipping a selection works on it as one block.
 * Turn (R / ⇧R), mirror (H), flip (V), layering (To Top ⌘⇧], To Bottom ⌘⇧[), duplicate (⌘D), undo (⌘Z).
 * Print / Export:
   * Overview of the whole map on one page (PDF or PNG), with or without tile codes.

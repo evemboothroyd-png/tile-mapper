@@ -19,6 +19,7 @@ from .background_panel import BackgroundPanel
 from .qtutil import app_data_dir
 
 MAP_FILTER = "Tile Mapper maps (*.tmap)"
+TILES_MIME = "application/x-tilemapper-tiles"
 MAX_UNDO = 200
 HELP_TEXT = """<h3>Building a map</h3>
 <ul>
@@ -28,6 +29,11 @@ different sets can be lined up however you like.</li>
 <li><b>Select several:</b> drag a box around them, or ⌘-click.</li>
 <li><b>Turn:</b> R (clockwise) or ⇧R (counter-clockwise).</li>
 <li><b>Mirror</b> left-right: H.  <b>Flip</b> top-bottom: V.</li>
+<li>With several tiles selected, Turn, Mirror, and Flip work on the <b>whole section as one
+block</b>, keeping the tiles joined up.</li>
+<li><b>Copy / Cut / Paste:</b> ⌘C, ⌘X, ⌘V. Pasted tiles appear under the mouse pointer (or in the
+middle of the view), already selected so you can drag or turn them. Copied sections can be
+pasted into another map.</li>
 <li><b>Layering:</b> tiles overlap freely; the newest one starts on top. Use the toolbar
 buttons <b>To Top</b> (⌘⇧]) and <b>To Bottom</b> (⌘⇧[).
 White background around the edge of any tile is see-through, so lower tiles show.</li>
@@ -167,20 +173,25 @@ class MainWindow(QMainWindow):
         self.a_delete = self._act("Delete", self.scene.delete_selected, QKeySequence(Qt.Key.Key_Backspace))
         self.a_delete.setShortcuts([QKeySequence(Qt.Key.Key_Backspace), QKeySequence(Qt.Key.Key_Delete)])
         m.addAction(self.a_delete)
+        self.a_cut = self._act("Cut", self.cut_tiles, S.Cut)
+        self.a_copy = self._act("Copy", self.copy_tiles, S.Copy)
+        self.a_paste = self._act("Paste", self.paste_tiles, S.Paste)
+        for a in (self.a_cut, self.a_copy, self.a_paste):
+            m.addAction(a)
         self.a_dup = self._act("Duplicate", self.scene.duplicate_selected, "Ctrl+D")
         m.addAction(self.a_dup)
         m.addAction(self._act("Select All", self._select_all, S.SelectAll))
 
         # Tile
         m = mb.addMenu("&Tile")
-        self.a_rot_cw = self._act("Turn Clockwise", lambda: self._modify(lambda p: rotate(p, 90), "Turn"),
+        self.a_rot_cw = self._act("Turn Clockwise", lambda: self.scene.transform_selected("cw", lambda p: rotate(p, 90), "Turn"),
                                   "R", "Turn the selected tiles 90° clockwise (R)")
         self.a_rot_ccw = self._act("Turn Counter-clockwise",
-                                   lambda: self._modify(lambda p: rotate(p, 270), "Turn"), "Shift+R",
+                                   lambda: self.scene.transform_selected("ccw", lambda p: rotate(p, 270), "Turn"), "Shift+R",
                                    "Turn the selected tiles 90° counter-clockwise (⇧R)")
-        self.a_mirror = self._act("Mirror Left–Right", lambda: self._modify(self._mirror, "Mirror"), "H",
+        self.a_mirror = self._act("Mirror Left–Right", lambda: self.scene.transform_selected("mirror", self._mirror, "Mirror"), "H",
                                   "Mirror the selected tiles left to right (H)")
-        self.a_flip = self._act("Flip Top–Bottom", lambda: self._modify(self._flip, "Flip"), "V",
+        self.a_flip = self._act("Flip Top–Bottom", lambda: self.scene.transform_selected("flip", self._flip, "Flip"), "V",
                                 "Flip the selected tiles top to bottom (V)")
         self.a_front = self._act("Bring to Front", self.scene.bring_to_front, "Ctrl+Shift+]",
                                  "Put the selected tiles on top of everything (⌘⇧])")
@@ -394,6 +405,75 @@ class MainWindow(QMainWindow):
     def _select_all(self):
         for item in self.scene.items_by_uid.values():
             item.setSelected(True)
+
+    # ========================================================= copy & paste
+    def _selected_placements(self) -> List[Placement]:
+        # keep the map's layer order so pasted tiles stack the same way
+        sel = {i.placement.uid for i in self.scene.selected_items()}
+        return [p for p in self.doc.placements if p.uid in sel]
+
+    def copy_tiles(self):
+        ps = self._selected_placements()
+        if not ps:
+            return
+        from dataclasses import asdict
+        from PySide6.QtCore import QMimeData
+        data = json.dumps({"format": "tilemapper-tiles", "placements": [asdict(p) for p in ps]})
+        mime = QMimeData()
+        mime.setData(TILES_MIME, data.encode("utf-8"))
+        mime.setText(f"{len(ps)} Tile Mapper tile(s): " + ", ".join(p.code for p in ps[:20]))
+        QApplication.clipboard().setMimeData(mime)
+        self._clip = data            # fallback if the system clipboard is unavailable
+        self.statusBar().showMessage(f"Copied {len(ps)} tile(s).", 3000)
+
+    def cut_tiles(self):
+        if self._selected_placements():
+            self.copy_tiles()
+            self.scene.delete_selected()
+
+    def _clipboard_placements(self) -> List[Placement]:
+        mime = QApplication.clipboard().mimeData()
+        data = None
+        if mime is not None and mime.hasFormat(TILES_MIME):
+            data = bytes(mime.data(TILES_MIME)).decode("utf-8")
+        data = data or getattr(self, "_clip", None)
+        if not data:
+            return []
+        try:
+            d = json.loads(data)
+            ps = []
+            for pd in d.get("placements", []):
+                pd = dict(pd)
+                pd.pop("uid", None)
+                pd["rotation"] = int(pd.get("rotation", 0)) % 360
+                ps.append(Placement(**pd))
+            return ps
+        except (ValueError, TypeError, KeyError):
+            return []
+
+    def paste_tiles(self):
+        """Paste centred under the mouse pointer (or the middle of the view)."""
+        ps = self._clipboard_placements()
+        if not ps:
+            return
+        from PySide6.QtGui import QCursor
+        vp = self.view.viewport()
+        pos = vp.mapFromGlobal(QCursor.pos())
+        if vp.rect().contains(pos):
+            sp = self.view.mapToScene(pos)
+            tx, ty = sp.x() / SCENE_PER_IN, sp.y() / SCENE_PER_IN
+        else:
+            tx, ty = self.view.visible_center_in()
+        X0 = min(p.rect[0] for p in ps); Y0 = min(p.rect[1] for p in ps)
+        X1 = max(p.rect[2] for p in ps); Y1 = max(p.rect[3] for p in ps)
+        dx = round(tx - (X0 + X1) / 2)
+        dy = round(ty - (Y0 + Y1) / 2)
+        for p in ps:
+            p.x += dx
+            p.y += dy
+        self.scene.add_placements(ps, "Paste")
+        self.view.setFocus()
+        self.statusBar().showMessage(f"Pasted {len(ps)} tile(s) — drag them into place.", 4000)
 
     # ============================================================ undo/redo
     def _on_doc_changed(self, label: str):
@@ -715,7 +795,7 @@ class MainWindow(QMainWindow):
             return
         has = bool(sel)
         for a in (self.a_rot_cw, self.a_rot_ccw, self.a_mirror, self.a_flip,
-                  self.a_delete, self.a_dup, self.a_front, self.a_back):
+                  self.a_delete, self.a_dup, self.a_front, self.a_back, self.a_cut, self.a_copy):
             a.setEnabled(has)
             if hasattr(a, "_tb"):
                 a._tb.setEnabled(has)

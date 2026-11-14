@@ -233,3 +233,69 @@ def test_background_image(app, tmp_path, monkeypatch):
     assert w.doc.background is None and w.scene.bg_item is None
     w.dirty = False
     w.close()
+
+
+def test_block_transforms_and_copy_paste(app, tmp_path):
+    from tilemapper.app.main_window import MainWindow
+    root = tmp_path / "tiles"
+    grid_tile(str(root / "Dungeon" / "DV328 Bonus Intersection.jpg"), 6, 6)
+    grid_tile(str(root / "Wilderness" / "DW17 Forest.jpg"), 6, 9)
+    w = MainWindow()
+    w.show()
+    w.load_library(str(root))
+    w._drop_tile("Dungeon/DV328 Bonus Intersection.jpg", 3, 3)      # A at (0,0) 6x6
+    w._drop_tile("Wilderness/DW17 Forest.jpg", 9, 4.5)             # B at (6,0) 6x9
+    A, B = w.doc.placements
+    assert (A.x, A.y, B.x, B.y) == (0, 0, 6, 0)
+
+    def select_all():
+        w.scene.clearSelection()
+        for it in w.scene.items_by_uid.values():
+            it.setSelected(True)
+
+    # turn the pair clockwise as one block: 12x9 block becomes 9x12
+    select_all()
+    w.a_rot_cw.trigger()
+    assert A.rotation == 90 and B.rotation == 90
+    assert A.rect == (5, -2, 11, 4)                  # left tile is now on top
+    assert B.rect == (2, 4, 11, 10)                  # B (9 tall) is now 9 wide, below A
+    # turning back restores the original layout
+    w.a_rot_ccw.trigger()
+    assert A.rotation == 0 and B.rotation == 0
+    assert (A.rect, B.rect) == ((0, 0, 6, 6), (6, 0, 12, 9))
+    # mirror the block: B moves to the left, A to the right
+    w.a_mirror.trigger()
+    assert B.rect[0] == 0 and A.rect[0] == 6 and A.flip_h and B.flip_h
+    w.a_mirror.trigger()
+    assert (A.rect, B.rect) == ((0, 0, 6, 6), (6, 0, 12, 9))
+    # a single tile still turns in place
+    w.scene.clearSelection()
+    w.scene.items_by_uid[A.uid].setSelected(True)
+    w.a_rot_cw.trigger()
+    assert A.rect == (0, 0, 6, 6) and A.rotation == 90
+    w.undo()
+    assert A.rotation == 0
+
+    # copy and paste keeps the arrangement, new tiles are selected and get new ids
+    A, B = w.doc.placements
+    select_all()
+    w.copy_tiles()
+    w.paste_tiles()
+    assert len(w.doc.placements) == 4
+    pA, pB = w.doc.placements[2:]
+    assert pA.uid not in (A.uid, B.uid) and pB.uid not in (A.uid, B.uid)
+    assert (pB.x - pA.x, pB.y - pA.y) == (6, 0)
+    assert pA.x == int(pA.x) and pA.y == int(pA.y)
+    assert {i.placement.uid for i in w.scene.selected_items()} == {pA.uid, pB.uid}
+    # undo removes the paste in one step
+    w.undo()
+    assert len(w.doc.placements) == 2
+
+    # cut, then paste back
+    select_all()
+    w.cut_tiles()
+    assert len(w.doc.placements) == 0
+    w.paste_tiles()
+    assert len(w.doc.placements) == 2
+    w.dirty = False
+    w.close()

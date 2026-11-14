@@ -1,3 +1,7 @@
+**New in 0.2.1 — working with sections:**
+- **Copy, Cut, and Paste** (⌘C, ⌘X, ⌘V). Pasted tiles land under the mouse pointer, already selected so you can drag or turn them. Sections can be pasted into another map.
+- With several tiles selected, **Turn, Mirror, and Flip work on the whole section as one block**, so the tiles stay joined up instead of each turning in its own spot.
+
 **New in 0.2.0 — background image:** put a photo or plan under (or over) your map to trace a real place at true scale. Open it with **View ▸ Choose Background Image…** or the **Background Image** panel on the right.
 - **Set Scale from a Known Distance…** — click both ends of something you know the length of and type it in feet; the image is resized so 5 ft = 1 square. Or type the **Image width** directly.
 - **Move Image** — drag it into line, then click **Done Moving**.

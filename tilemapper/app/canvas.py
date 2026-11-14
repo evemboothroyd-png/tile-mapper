@@ -292,6 +292,56 @@ class MapScene(QGraphicsScene):
         self.refresh_z()
         self.changed_doc.emit(label)
 
+    # ------------------------------------------------ whole-selection transforms
+    def transform_selected(self, kind: str, tile_fn: Callable[[Placement], None], label: str):
+        """Turn / mirror / flip the selection as one block, not tile by tile.
+
+        kind: "cw", "ccw", "mirror" or "flip". Each tile is transformed (tile_fn) and moved
+        to its new spot in the block. The block stays centred where it was, on whole inches.
+        """
+        sel = self.selected_items()
+        if not sel:
+            return
+        ps = [i.placement for i in sel]
+        X0 = min(p.rect[0] for p in ps); Y0 = min(p.rect[1] for p in ps)
+        X1 = max(p.rect[2] for p in ps); Y1 = max(p.rect[3] for p in ps)
+        W, H = X1 - X0, Y1 - Y0
+        cx, cy = (X0 + X1) / 2, (Y0 + Y1) / 2
+        if kind in ("cw", "ccw"):
+            nX0, nY0 = round(cx - H / 2), round(cy - W / 2)     # block is now H wide, W tall
+        else:
+            nX0, nY0 = X0, Y0
+        for p in ps:
+            u0, v0, u1, v1 = p.rect[0] - X0, p.rect[1] - Y0, p.rect[2] - X0, p.rect[3] - Y0
+            if kind == "cw":
+                nx, ny = H - v1, u0
+            elif kind == "ccw":
+                nx, ny = v0, W - u1
+            elif kind == "mirror":
+                nx, ny = W - u1, v0
+            else:  # flip
+                nx, ny = u0, H - v1
+            tile_fn(p)
+            p.x, p.y = nX0 + nx, nY0 + ny
+        for item in sel:
+            item.set_pixmap(self.pixmap_for(item.placement))
+        self.refresh_z()
+        self.changed_doc.emit(label)
+
+    # ------------------------------------------------------- copy & paste
+    def add_placements(self, ps: List[Placement], label: str):
+        """Add several tiles at once (paste) and leave just them selected."""
+        if not ps:
+            return
+        self.clearSelection()
+        for p in ps:
+            self.doc.placements.append(p)
+            item = self._add_item(p)
+        self.refresh_z()
+        for p in ps:
+            self.items_by_uid[p.uid].setSelected(True)
+        self.changed_doc.emit(label)
+
     def duplicate_selected(self):
         sel = self.selected_items()
         if not sel:
