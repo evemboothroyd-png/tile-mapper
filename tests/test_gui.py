@@ -137,3 +137,99 @@ def test_zoom(app):
     app.sendEvent(v.viewport(), wheel(-40, Qt.ScrollPhase.ScrollUpdate, QPoint(0, -40)))
     assert v._zoom == z
     w.close()
+
+
+def test_background_image(app, tmp_path, monkeypatch):
+    from PIL import Image as PILImage
+    from PySide6.QtCore import QPointF, Qt
+    from PySide6.QtWidgets import QInputDialog
+    from tilemapper.app.canvas import BG_Z_OVER, BG_Z_UNDER, SCENE_PER_IN
+    from tilemapper.app.main_window import MainWindow
+    from tilemapper.engine import BACKGROUND_DEFAULTS, MapDocument
+
+    root = tmp_path / "tiles"
+    grid_tile(str(root / "Dungeon" / "DV328 Bonus Intersection.jpg"), 6, 6)
+    img = tmp_path / "photos" / "mews.png"
+    img.parent.mkdir()
+    PILImage.new("RGB", (400, 200), (90, 140, 200)).save(img)
+
+    w = MainWindow()
+    w.show()
+    w.load_library(str(root))
+    w._drop_tile("Dungeon/DV328 Bonus Intersection.jpg", 3, 3)
+    app.processEvents()
+    tile_item = next(iter(w.scene.items_by_uid.values()))
+
+    # add the image (same steps as Choose Background Image, minus the file dialog)
+    w.doc.background = dict(BACKGROUND_DEFAULTS, path=str(img), in_per_px=0.1)
+    assert w.scene.refresh_background()
+    w._bg_after_change()
+    bgi = w.scene.bg_item
+    assert bgi is not None and bgi.zValue() == BG_Z_UNDER
+    assert abs(bgi.sceneBoundingRect().width() - 40 * SCENE_PER_IN) < 1e-6   # 400 px * 0.1 in
+    assert bgi.acceptedMouseButtons() == Qt.MouseButton.NoButton            # clicks reach tiles
+
+    # opacity and over/under
+    w.bg_panel.opacity.setValue(30)
+    assert abs(bgi.opacity() - 0.30) < 1e-6
+    w.a_bg_layer.trigger()
+    assert w.doc.background["on_top"] and w.scene.bg_item.zValue() == BG_Z_OVER
+    assert w.bg_panel.over.isChecked()
+    w.a_bg_layer.trigger()
+    assert not w.doc.background["on_top"] and w.scene.bg_item.zValue() == BG_Z_UNDER
+    w.a_bg_show.trigger()
+    assert not w.scene.bg_item.isVisible()
+    w.a_bg_show.trigger()
+    assert w.scene.bg_item.isVisible()
+
+    # image width box: 80 in wide, centre stays put
+    cx = w.doc.background["x"] + 20
+    w.bg_panel.width.setValue(80.0)
+    assert abs(w.doc.background["in_per_px"] - 0.2) < 1e-9
+    assert abs(w.doc.background["x"] + 40 - cx) < 1e-6
+
+    # Set Scale: two points 100 image pixels apart are 50 ft -> 10 squares -> 0.1 in/px
+    monkeypatch.setattr(QInputDialog, "getDouble", staticmethod(lambda *a, **k: (50.0, True)))
+    bx, by = w.doc.background["x"], w.doc.background["y"]
+    a = QPointF((bx + 10 * 0.2) * SCENE_PER_IN, (by + 10 * 0.2) * SCENE_PER_IN)
+    b = QPointF((bx + 110 * 0.2) * SCENE_PER_IN, (by + 10 * 0.2) * SCENE_PER_IN)
+    w._bg_measure()
+    w._bg_measured(a, b)
+    bg = w.doc.background
+    assert abs(bg["in_per_px"] - 0.1) < 1e-9
+    # the first clicked point stays on the same spot of the image
+    assert abs(bg["x"] + 10 * 0.1 - a.x() / SCENE_PER_IN) < 1e-6
+
+    # move mode: tiles ignore the mouse, the image can be dragged; then back to normal
+    w._bg_move(True)
+    assert tile_item.acceptedMouseButtons() == Qt.MouseButton.NoButton
+    assert w.scene.bg_item.acceptedMouseButtons() == Qt.MouseButton.LeftButton
+    x_before = w.doc.background["x"]
+    w.scene.bg_item.setPos(w.scene.bg_item.pos() + QPointF(300, 0))
+    w.scene.background_moved()
+    assert abs(w.doc.background["x"] - (x_before + 3)) < 1e-6
+    w._bg_move(False)
+    assert tile_item.acceptedMouseButtons() == Qt.MouseButton.LeftButton
+
+    # saved with the map; found next to the map if the image was moved
+    mp = tmp_path / "maps" / "mews.tmap"
+    mp.parent.mkdir()
+    assert w._write(str(mp))
+    saved = MapDocument.load(str(mp))
+    assert saved.background["path"] == str(img)
+    moved = mp.parent / "mews.png"
+    img.rename(moved)
+    w.open_map(str(mp))
+    assert w.doc.background["path"] == str(moved)
+    assert w.scene.bg_item is not None
+    assert w.bg_panel.width.value() > 0
+
+    # undo keeps the image; remove takes it away
+    w.scene.items_by_uid[w.doc.placements[0].uid].setSelected(True)
+    w.a_rot_cw.trigger()
+    w.undo()
+    assert w.scene.bg_item is not None
+    w.remove_background()
+    assert w.doc.background is None and w.scene.bg_item is None
+    w.dirty = False
+    w.close()

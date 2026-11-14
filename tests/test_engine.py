@@ -262,3 +262,22 @@ def test_every_tile_gets_clear_white_edges(lib):
     doc.add(p)
     img = TileRenderer(lib).tile_image(p, 50)
     assert img.mode == "RGBA" and img.getpixel((1, 1))[3] == 0
+
+
+def test_background_saved_but_never_exported(lib, tmp_path):
+    doc = sample_map(lib)
+    plain = tmp_path / "plain.png"
+    export.overview_png(doc, TileRenderer(lib), str(plain), labels=False)
+    doc.background = {"path": "/somewhere/mews.png", "x": -50, "y": -20, "in_per_px": 0.0885,
+                      "opacity": 0.4, "on_top": True, "visible": True}
+    p = tmp_path / "bg.tmap"
+    doc.save(str(p))
+    back = MapDocument.load(str(p))
+    assert back.background == doc.background
+    assert back.bounds() == doc.bounds()          # the image doesn't change the map's size
+    withbg = tmp_path / "withbg.png"
+    export.overview_png(back, TileRenderer(lib), str(withbg), labels=False)
+    assert Image.open(plain).tobytes() == Image.open(withbg).tobytes()
+    # maps without a background still save without the key (older versions read them fine)
+    doc.background = None
+    assert "background" not in doc.to_dict()

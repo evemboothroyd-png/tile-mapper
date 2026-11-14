@@ -11,10 +11,11 @@ from PySide6.QtWidgets import (QMainWindow, QDockWidget, QFileDialog, QMessageBo
                                QLabel, QProgressDialog, QApplication, QInputDialog, QWidget)
 
 from .. import APP_NAME, __version__
-from ..engine import MapDocument, Placement, TileLibrary, TileRenderer, snap
+from ..engine import MapDocument, Placement, TileLibrary, TileRenderer, snap, BACKGROUND_DEFAULTS
 from .browser import TileBrowser
 from .canvas import MapScene, MapView, rotate, snap_step, SCENE_PER_IN
 from .export_dialog import run_export
+from .background_panel import BackgroundPanel
 from .qtutil import app_data_dir
 
 MAP_FILTER = "Tile Mapper maps (*.tmap)"
@@ -35,6 +36,19 @@ White background around the edge of any tile is see-through, so lower tiles show
 <li><b>Zoom:</b> pinch on the trackpad, turn a mouse scroll wheel, ⌘ + scroll, ⌘+ / ⌘−, or the
 <b>Zoom In</b> / <b>Zoom Out</b> toolbar buttons. Zooming centres on the pointer.
 <b>Fit the whole map:</b> ⌘0 or <b>Fit Map</b>.</li>
+</ul>
+<h3>Background image (for tracing real places)</h3>
+<ul>
+<li><b>View ▸ Choose Background Image…</b> (or the Background Image panel on the right) puts a
+photo or plan behind your map. It moves and zooms with the tiles.</li>
+<li><b>Set Scale from a Known Distance…:</b> click both ends of something whose length you
+know, then type that length in feet. The image is resized so 5 ft = 1 square (1 inch).
+You can also type the <b>Image width</b> directly.</li>
+<li><b>Move Image:</b> turn on, drag the image into line, then click <b>Done Moving</b>.</li>
+<li><b>Opacity</b> fades it. <b>Over tiles / Under tiles</b> (or press <b>B</b>) puts it on top
+for tracing or underneath for checking. ⇧B hides or shows it. Clicks always reach the tiles.</li>
+<li>The image is saved with the map but is <b>never printed or exported</b>. If you move the
+image file, put it in the same folder as the map and it will be found.</li>
 </ul>
 <h3>Printing to scale</h3>
 <p>Choose <b>File ▸ Print / Export…</b> and pick <i>Full size — split into printer pages</i>.
@@ -77,6 +91,23 @@ class MainWindow(QMainWindow):
         dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
 
+        self.bg_panel = BackgroundPanel(self)
+        self.bg_dock = QDockWidget("Background Image", self)
+        self.bg_dock.setObjectName("background_dock")
+        self.bg_dock.setWidget(self.bg_panel)
+        self.bg_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable
+                                 | QDockWidget.DockWidgetFeature.DockWidgetClosable)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.bg_dock)
+        self.bg_panel.choose_requested.connect(self.choose_background)
+        self.bg_panel.remove_requested.connect(self.remove_background)
+        self.bg_panel.changed.connect(self._bg_set)
+        self.bg_panel.width_changed.connect(self._bg_width)
+        self.bg_panel.measure_requested.connect(self._bg_measure)
+        self.bg_panel.move_toggled.connect(self._bg_move)
+        self.scene.background_changed.connect(self._bg_after_change)
+        self.view.measure_done.connect(self._bg_measured)
+        self.view.measure_cancelled.connect(lambda: self.statusBar().showMessage("Set Scale cancelled.", 3000))
+
         self.status_map = QLabel()
         self.status_sel = QLabel()
         self.status_zoom = QLabel()
@@ -92,6 +123,7 @@ class MainWindow(QMainWindow):
         self._update_title()
         self._update_status()
         self._on_selection()
+        self._bg_refresh_panel()
         QTimer.singleShot(0, self._startup)
 
     # ================================================================ actions
@@ -166,6 +198,17 @@ class MainWindow(QMainWindow):
         m.addAction(self._act("Zoom Out", lambda: self.view.zoom_by(0.8, False), S.ZoomOut))
         m.addAction(self._act("Fit Whole Map", self.view.zoom_to_fit, "Ctrl+0"))
         m.addAction(self._act("Actual Size on Screen (approx.)", lambda: self.view.set_zoom(0.96), "Ctrl+1"))
+        m.addSeparator()
+        m.addAction(self._act("Choose Background Image…", self.choose_background))
+        self.a_bg_layer = self._act("Background Over / Under Tiles", self._bg_flip_layer, "B",
+                                    "Flip the background image between over and under the tiles (B)")
+        m.addAction(self.a_bg_layer)
+        self.a_bg_show = self._act("Show Background Image", self._bg_toggle_visible, "Shift+B",
+                                   "Hide or show the background image (⇧B)", checkable=True)
+        m.addAction(self.a_bg_show)
+        self.a_bg_panel = self.bg_dock.toggleViewAction()
+        self.a_bg_panel.setText("Background Image Panel")
+        m.addAction(self.a_bg_panel)
 
         # Tiles (library)
         m = mb.addMenu("Ti&les")
@@ -405,8 +448,13 @@ class MainWindow(QMainWindow):
         self.undo_stack.clear()
         self.redo_stack.clear()
         self._last_state = doc.to_dict()
+        self.view.stop_measure()
+        self.scene._bg_moving = False
+        self.bg_panel.set_moving(False)
+        self._resolve_background_path(path)
         self.scene.rebuild()
         self.view.zoom_to_fit()
+        self._bg_refresh_panel()
         self._update_title()
         self._update_status()
 
@@ -428,6 +476,11 @@ class MainWindow(QMainWindow):
             return
         self._set_doc(doc, path)
         self._add_recent(path)
+        if doc.background and self.scene.bg_item is None:
+            QMessageBox.warning(self, "Background image not found",
+                                f"This map's background image couldn't be found:\n"
+                                f"{doc.background['path']}\n\nChoose it again with "
+                                f"View ▸ Choose Background Image….")
         missing = [p.code for p in doc.placements if not (self.library and self.library.get(p.tile_id))]
         if missing:
             QMessageBox.warning(self, "Some tiles are missing",
@@ -498,6 +551,144 @@ class MainWindow(QMainWindow):
         if not self.library:
             return
         run_export(self, self.doc, self.library, kind, self.settings.value("export_dir", self._map_dir()))
+
+    # ===================================================== background image
+    def _resolve_background_path(self, map_path: Optional[str]):
+        """If the image has moved, look for it next to the map file."""
+        bg = self.doc.background
+        if not bg or os.path.exists(bg["path"]) or not map_path:
+            return
+        alt = os.path.join(os.path.dirname(map_path), os.path.basename(bg["path"]))
+        if os.path.exists(alt):
+            bg["path"] = alt
+
+    def _bg_mark_dirty(self):
+        self.dirty = True
+        self._update_title()
+
+    def _bg_refresh_panel(self):
+        self.bg_panel.set_state(self.doc.background, self.scene.background_size_px())
+        bg = self.doc.background
+        self.a_bg_layer.setEnabled(bool(bg))
+        self.a_bg_show.setEnabled(bool(bg))
+        self.a_bg_show.setChecked(bool(bg and bg.get("visible", True)))
+
+    def _bg_after_change(self):
+        self._bg_mark_dirty()
+        self._bg_refresh_panel()
+
+    def choose_background(self):
+        start = self.settings.value("bg_dir", os.path.expanduser("~/Desktop"))
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Choose a background image", start,
+            "Images (*.png *.jpg *.jpeg *.tif *.tiff *.bmp *.gif *.webp)")
+        if not path:
+            return
+        self.settings.setValue("bg_dir", os.path.dirname(path))
+        old = self.doc.background
+        bg = dict(BACKGROUND_DEFAULTS, path=path)
+        if old:   # keep the look the user had set up
+            bg.update(opacity=old["opacity"], on_top=old["on_top"], visible=True)
+        pm = self.scene.background_pixmap(path)
+        if pm is None:
+            QMessageBox.warning(self, "Couldn't open image", f"This file couldn't be read as an image:\n{path}")
+            return
+        # start it filling most of what's on screen; Set Scale makes it exact
+        r = self.view.mapToScene(self.view.viewport().rect()).boundingRect()
+        vis_w = r.width() / SCENE_PER_IN
+        vis_h = r.height() / SCENE_PER_IN
+        bg["in_per_px"] = 0.9 * min(vis_w / pm.width(), vis_h / pm.height())
+        bg["x"] = round(r.center().x() / SCENE_PER_IN - pm.width() * bg["in_per_px"] / 2, 4)
+        bg["y"] = round(r.center().y() / SCENE_PER_IN - pm.height() * bg["in_per_px"] / 2, 4)
+        self.doc.background = bg
+        self.scene.refresh_background()
+        self.bg_dock.show()
+        self._bg_after_change()
+        self.statusBar().showMessage("Background added. Use “Set Scale from a Known Distance…” "
+                                     "to size it so 5 ft = 1 square.", 8000)
+
+    def remove_background(self):
+        if not self.doc.background:
+            return
+        self._bg_move(False)
+        self.doc.background = None
+        self.scene.refresh_background()
+        self._bg_after_change()
+
+    def _bg_set(self, changes: dict):
+        if not self.doc.background:
+            return
+        self.doc.background.update(changes)
+        self.scene.refresh_background()
+        self._bg_after_change()
+
+    def _bg_flip_layer(self):
+        if self.doc.background:
+            self._bg_set({"on_top": not self.doc.background.get("on_top", False)})
+
+    def _bg_toggle_visible(self):
+        if self.doc.background:
+            self._bg_set({"visible": not self.doc.background.get("visible", True)})
+
+    def _bg_width(self, width_in: float):
+        bg = self.doc.background
+        w_px, h_px = self.scene.background_size_px()
+        if not bg or not w_px:
+            return
+        old = float(bg["in_per_px"])
+        new = width_in / w_px
+        cx = bg["x"] + w_px * old / 2
+        cy = bg["y"] + h_px * old / 2
+        bg.update(in_per_px=new, x=round(cx - w_px * new / 2, 4), y=round(cy - h_px * new / 2, 4))
+        self.scene.refresh_background()
+        self._bg_after_change()
+
+    def _bg_move(self, on: bool):
+        self.scene.set_background_moving(on)
+        self.bg_panel.set_moving(on)
+        if on:
+            self.statusBar().showMessage("Drag the background image to line it up. "
+                                         "Click “Done Moving” when finished.")
+        else:
+            self.statusBar().clearMessage()
+
+    def _bg_measure(self):
+        if not self.doc.background:
+            return
+        self._bg_move(False)
+        self.view.start_measure()
+        self.statusBar().showMessage("Set Scale: click one end of something you know the length "
+                                     "of, then the other end. Esc cancels.")
+
+    def _bg_measured(self, a, b):
+        bg = self.doc.background
+        self.statusBar().clearMessage()
+        if not bg:
+            self.view.stop_measure()
+            return
+        old = float(bg["in_per_px"])
+        dist_in = ((b.x() - a.x()) ** 2 + (b.y() - a.y()) ** 2) ** 0.5 / SCENE_PER_IN
+        px = dist_in / old
+        if px < 2:
+            self.view.stop_measure()
+            QMessageBox.information(self, "Set Scale", "Those two points are too close together. "
+                                    "Try again with points farther apart.")
+            return
+        feet, ok = QInputDialog.getDouble(
+            self, "Set Scale", "How far apart are those two points in real life (feet)?",
+            float(self.settings.value("bg_last_feet", 50.0)), 0.1, 1_000_000.0, 1)
+        self.view.stop_measure()
+        if not ok:
+            return
+        self.settings.setValue("bg_last_feet", feet)
+        new = (feet / 5.0) / px                     # 5 ft = 1 square = 1 inch
+        ax, ay = a.x() / SCENE_PER_IN, a.y() / SCENE_PER_IN
+        # keep the first point where it was so the image doesn't jump away
+        lx, ly = (ax - bg["x"]) / old, (ay - bg["y"]) / old
+        bg.update(in_per_px=new, x=round(ax - lx * new, 4), y=round(ay - ly * new, 4))
+        self.scene.refresh_background()
+        self._bg_after_change()
+        self.statusBar().showMessage(f"Scale set: {feet:g} ft = {feet / 5:g} squares.", 6000)
 
     # ============================================================== status
     def _update_title(self):

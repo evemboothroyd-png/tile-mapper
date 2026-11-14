@@ -1,6 +1,10 @@
-**New in 0.1.5 — zooming:** pinch on the trackpad to zoom in and out, centred on the pointer. A mouse scroll wheel zooms too, while two-finger scrolling on the trackpad still moves the map around. There are also **Zoom Out** and **Zoom In** buttons on the toolbar next to **Fit Map**, plus ⌘+ / ⌘− and ⌘ + scroll. The current zoom shows at the bottom right of the window.
+**New in 0.2.0 — background image:** put a photo or plan under (or over) your map to trace a real place at true scale. Open it with **View ▸ Choose Background Image…** or the **Background Image** panel on the right.
+- **Set Scale from a Known Distance…** — click both ends of something you know the length of and type it in feet; the image is resized so 5 ft = 1 square. Or type the **Image width** directly.
+- **Move Image** — drag it into line, then click **Done Moving**.
+- **Opacity** slider, and **Over tiles / Under tiles** (press **B** to flip; ⇧B hides it).
+- It pans and zooms with the tiles, is saved with the map, and is **never printed or exported**.
 
-**Earlier (0.1.2–0.1.4):** every tile overlaps freely; **To Top** and **To Bottom** buttons control which is on top; white edges of tiles are see-through.
+**0.1.5:** pinch, mouse-wheel, and toolbar zooming.
 
 **Which file do I need?** Apple menu ▸ About This Mac.
 - *Chip: Apple M1/M2/M3/M4…* → download the file ending in **arm64.dmg**

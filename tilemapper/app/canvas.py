@@ -100,14 +100,61 @@ class TileItem(QGraphicsPixmapItem):
             painter.drawRect(self.boundingRect().adjusted(0.5, 0.5, -0.5, -0.5))
 
 
+BG_Z_UNDER = -1.0e7
+BG_Z_OVER = 1.0e7
+
+
+class BackgroundItem(QGraphicsPixmapItem):
+    """The on-screen reference image. Lives in the scene so it pans and zooms with the
+    tiles, but is never part of the map's printing or export."""
+
+    def __init__(self, pixmap: QPixmap, scene: "MapScene"):
+        super().__init__(pixmap)
+        self._map_scene = scene
+        self._press_pos = None
+        self.setTransformationMode(Qt.TransformationMode.SmoothTransformation)
+        self.setShapeMode(QGraphicsPixmapItem.ShapeMode.BoundingRectShape)
+        self.set_movable(False)
+
+    def apply(self, bg: dict):
+        from PySide6.QtGui import QTransform
+        s = float(bg["in_per_px"]) * SCENE_PER_IN
+        self.setTransform(QTransform.fromScale(s, s))
+        self.setPos(float(bg["x"]) * SCENE_PER_IN, float(bg["y"]) * SCENE_PER_IN)
+        self.setOpacity(max(0.0, min(1.0, float(bg["opacity"]))))
+        self.setZValue(BG_Z_OVER if bg.get("on_top") else BG_Z_UNDER)
+        self.setVisible(bool(bg.get("visible", True)))
+
+    def set_movable(self, on: bool):
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, on)
+        # when not moving, clicks pass straight through to the tiles (even when on top)
+        self.setAcceptedMouseButtons(Qt.MouseButton.LeftButton if on else Qt.MouseButton.NoButton)
+        self.setCursor(Qt.CursorShape.SizeAllCursor if on else Qt.CursorShape.ArrowCursor)
+
+    def mousePressEvent(self, event):
+        self._press_pos = QPointF(self.pos())
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        super().mouseReleaseEvent(event)
+        if self._press_pos is not None and self._press_pos != self.pos():
+            self._map_scene.background_moved()
+        self._press_pos = None
+
+
 class MapScene(QGraphicsScene):
     changed_doc = Signal(str)      # description of the change (for undo)
+    background_changed = Signal()  # the reference image was moved / resized / restyled
 
     def __init__(self, doc: MapDocument, renderer: TileRenderer, parent=None):
         super().__init__(parent)
         self.doc = doc
         self.renderer = renderer
         self.items_by_uid: Dict[str, TileItem] = {}
+        self.bg_item: Optional[BackgroundItem] = None
+        self._bg_pixmap: Optional[QPixmap] = None
+        self._bg_path: Optional[str] = None
+        self._bg_moving = False
         w = WORLD_IN * SCENE_PER_IN
         self.setSceneRect(-w, -w, 2 * w, 2 * w)
         self.setBackgroundBrush(QBrush(QColor(52, 56, 62)))
@@ -127,11 +174,69 @@ class MapScene(QGraphicsScene):
     def rebuild(self):
         self.clear()
         self.items_by_uid = {}
+        self.bg_item = None
         for p in self.doc.placements:
             self._add_item(p)
+        self.refresh_background()
+        self.set_background_moving(self._bg_moving)
+
+    # --------------------------------------------------------- background
+    def background_pixmap(self, path: str) -> Optional[QPixmap]:
+        if path != self._bg_path:
+            pm = QPixmap(path)
+            self._bg_pixmap = None if pm.isNull() else pm
+            self._bg_path = path
+        return self._bg_pixmap
+
+    def refresh_background(self) -> bool:
+        """Create, update or remove the reference image to match doc.background.
+        Returns False if the image file couldn't be loaded."""
+        bg = self.doc.background
+        if not bg:
+            if self.bg_item is not None:
+                self.removeItem(self.bg_item)
+                self.bg_item = None
+            return True
+        pm = self.background_pixmap(bg["path"])
+        if pm is None:
+            if self.bg_item is not None:
+                self.removeItem(self.bg_item)
+                self.bg_item = None
+            return False
+        if self.bg_item is None or self.bg_item.pixmap().cacheKey() != pm.cacheKey():
+            if self.bg_item is not None:
+                self.removeItem(self.bg_item)
+            self.bg_item = BackgroundItem(pm, self)
+            self.addItem(self.bg_item)
+            self.bg_item.set_movable(self._bg_moving)
+        self.bg_item.apply(bg)
+        return True
+
+    def background_size_px(self):
+        pm = self._bg_pixmap
+        return (pm.width(), pm.height()) if pm is not None else (0, 0)
+
+    def set_background_moving(self, on: bool):
+        """Move mode: the image can be dragged and tiles ignore the mouse."""
+        self._bg_moving = on
+        if self.bg_item is not None:
+            self.bg_item.set_movable(on)
+            if on:
+                self.clearSelection()
+        buttons = Qt.MouseButton.NoButton if on else Qt.MouseButton.LeftButton
+        for item in self.items_by_uid.values():
+            item.setAcceptedMouseButtons(buttons)
+
+    def background_moved(self):
+        if self.bg_item is not None and self.doc.background:
+            self.doc.background["x"] = round(self.bg_item.pos().x() / SCENE_PER_IN, 4)
+            self.doc.background["y"] = round(self.bg_item.pos().y() / SCENE_PER_IN, 4)
+            self.background_changed.emit()
 
     def _add_item(self, p: Placement) -> TileItem:
         item = TileItem(p, self.pixmap_for(p), self)
+        if self._bg_moving:
+            item.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
         self.addItem(item)
         self.items_by_uid[p.uid] = item
         return item
@@ -230,6 +335,8 @@ def rotate(p: Placement, deg: int):
 class MapView(QGraphicsView):
     zoom_changed = Signal(float)
     tile_dropped = Signal(str, float, float)     # tile_id, x_in, y_in (centre)
+    measure_done = Signal(QPointF, QPointF)      # two scene points picked for "Set Scale"
+    measure_cancelled = Signal()
 
     def __init__(self, scene: MapScene, parent=None):
         super().__init__(scene, parent)
@@ -240,6 +347,9 @@ class MapView(QGraphicsView):
         self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.BoundingRectViewportUpdate)
         self.setAcceptDrops(True)
         self._space = False
+        self._measuring = False
+        self._measure_pts: List[QPointF] = []
+        self._measure_items = []
         self._zoom = 1.0
         self.set_zoom(0.25)
         self.centerOn(0, 0)
@@ -260,6 +370,11 @@ class MapView(QGraphicsView):
 
     def zoom_to_fit(self):
         b = self.scene().doc.bounds()
+        bgi = self.scene().bg_item
+        if not b and bgi is not None and bgi.isVisible():
+            r = bgi.sceneBoundingRect()
+            b = (r.left() / SCENE_PER_IN, r.top() / SCENE_PER_IN,
+                 r.right() / SCENE_PER_IN, r.bottom() / SCENE_PER_IN)
         if not b:
             self.set_zoom(0.25)
             self.centerOn(0, 0)
@@ -309,8 +424,49 @@ class MapView(QGraphicsView):
             return True
         return super().event(e)
 
+    # ------------------------------------------- picking two points to set scale
+    def start_measure(self):
+        self._clear_measure()
+        self._measuring = True
+        self._measure_pts = []
+        self.setDragMode(QGraphicsView.DragMode.NoDrag)
+        self.viewport().setCursor(Qt.CursorShape.CrossCursor)
+        self.setFocus()
+
+    def stop_measure(self):
+        self._measuring = False
+        self._clear_measure()
+        self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
+        self.viewport().unsetCursor()
+
+    def _clear_measure(self):
+        for it in self._measure_items:
+            try:
+                if it.scene() is not None:
+                    self.scene().removeItem(it)
+            except RuntimeError:      # already gone (scene was rebuilt)
+                pass
+        self._measure_items = []
+
+    def _mark(self, pt: QPointF):
+        pen = QPen(QColor(255, 40, 40), 3)
+        pen.setCosmetic(True)
+        r = 6 / max(self._zoom, 1e-6)
+        dot = self.scene().addEllipse(pt.x() - r, pt.y() - r, 2 * r, 2 * r, pen)
+        dot.setZValue(2.0e7)
+        self._measure_items.append(dot)
+        if len(self._measure_pts) == 2:
+            a, b = self._measure_pts
+            line = self.scene().addLine(a.x(), a.y(), b.x(), b.y(), pen)
+            line.setZValue(2.0e7)
+            self._measure_items.append(line)
+
     # ------------------------------------------------- space-bar panning
     def keyPressEvent(self, e: QKeyEvent):
+        if self._measuring and e.key() == Qt.Key.Key_Escape:
+            self.stop_measure()
+            self.measure_cancelled.emit()
+            return
         if e.key() == Qt.Key.Key_Space and not e.isAutoRepeat():
             self._space = True
             self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
@@ -321,12 +477,25 @@ class MapView(QGraphicsView):
     def keyReleaseEvent(self, e: QKeyEvent):
         if e.key() == Qt.Key.Key_Space and not e.isAutoRepeat():
             self._space = False
-            self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
+            self.setDragMode(QGraphicsView.DragMode.NoDrag if self._measuring
+                             else QGraphicsView.DragMode.RubberBandDrag)
             self.setInteractive(True)
             return
         super().keyReleaseEvent(e)
 
     def mousePressEvent(self, e):
+        if self._measuring and e.button() == Qt.MouseButton.LeftButton and not self._space:
+            pt = self.mapToScene(e.position().toPoint())
+            self._measure_pts.append(pt)
+            self._mark(pt)
+            if len(self._measure_pts) == 2:
+                a, b = self._measure_pts
+                self._measuring = False
+                self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
+                self.viewport().unsetCursor()
+                self.measure_done.emit(a, b)
+            e.accept()
+            return
         if e.button() == Qt.MouseButton.MiddleButton:
             self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
             self.setInteractive(False)

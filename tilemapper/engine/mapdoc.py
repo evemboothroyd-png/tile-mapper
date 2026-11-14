@@ -18,6 +18,8 @@ from typing import List, Optional, Tuple
 FORMAT_VERSION = 1
 TILE_UNIT_IN = 6.0           # "whole tile" snap step
 FINE_UNIT_IN = 1.0           # snap step for odd-sized and floating pieces
+BACKGROUND_DEFAULTS = {"x": 0.0, "y": 0.0, "in_per_px": 0.1, "opacity": 0.5,
+                       "on_top": False, "visible": True}
 
 
 @dataclass
@@ -51,6 +53,9 @@ class MapDocument:
         self.placements: List[Placement] = []
         self.title = "Untitled map"
         self.library_hint = ""     # library root used when saved (informational)
+        # On-screen reference image (never printed or exported). Keys: path, x, y (inches,
+        # top-left), in_per_px (inches per image pixel), opacity (0-1), on_top, visible.
+        self.background: Optional[dict] = None
 
     # ----------------------------------------------------------- ordering
     def draw_order(self) -> List[Placement]:
@@ -149,6 +154,7 @@ class MapDocument:
             "title": self.title,
             "library_hint": self.library_hint,
             "placements": [asdict(p) for p in self.placements],
+            **({"background": dict(self.background)} if self.background else {}),
         }
 
     def save(self, path: str):
@@ -162,6 +168,9 @@ class MapDocument:
         doc = MapDocument()
         doc.title = d.get("title", doc.title)
         doc.library_hint = d.get("library_hint", "")
+        bg = d.get("background")
+        if isinstance(bg, dict) and bg.get("path"):
+            doc.background = dict(BACKGROUND_DEFAULTS, **bg)
         for pd in d.get("placements", []):
             pd = dict(pd)
             pd["rotation"] = int(pd.get("rotation", 0)) % 360
