@@ -273,8 +273,8 @@ def test_block_transforms_and_copy_paste(app, tmp_path):
     w.scene.items_by_uid[A.uid].setSelected(True)
     w.a_rot_cw.trigger()
     assert A.rect == (0, 0, 6, 6) and A.rotation == 90
-    w.undo()
-    assert A.rotation == 0
+    w.undo()                       # undo swaps in fresh copies of the tiles
+    assert w.doc.placements[0].rotation == 0
 
     # copy and paste keeps the arrangement, new tiles are selected and get new ids
     A, B = w.doc.placements

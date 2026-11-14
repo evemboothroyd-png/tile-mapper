@@ -35,7 +35,16 @@ jobs:
       - name: Test (engine + headless window)
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python -m pytest -q tests
+        run: |
+          set +e
+          python -m pytest -q -rf --tb=short tests 2>&1 | tee pytest.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            # post the failure details as an annotation so they can be read on the run page
+            msg=$(grep -E "^(E |FAILED |tests/|>)" pytest.log | head -60 | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error title=Tests failed::${msg}"
+          fi
+          exit $status
 
       - name: Build app and DMG
         run: bash packaging/build_mac.sh
