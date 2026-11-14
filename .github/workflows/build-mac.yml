@@ -15,8 +15,6 @@ jobs:
         include:
           - runner: macos-15          # Apple Silicon (M1/M2/M3/M4)
             label: apple-silicon
-          - runner: macos-15-intel    # Intel Macs
-            label: intel
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: write

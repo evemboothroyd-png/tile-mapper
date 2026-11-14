@@ -43,7 +43,7 @@ To correct a tile, add it to `tile_overrides.json`:
 
 ## Building
 
-Every push to GitHub builds `.dmg` installers for Apple Silicon and Intel Macs
+Every push to GitHub builds a `.dmg` installer for Apple-chip Macs (Intel Macs are no longer built)
 (Actions tab ▸ latest run ▸ Artifacts). Locally on a Mac: `bash packaging/build_mac.sh`.
 
 Run from source: `pip install -r requirements.txt && python -m tilemapper`.
