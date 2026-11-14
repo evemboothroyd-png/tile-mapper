@@ -107,3 +107,33 @@ def test_window_workflow(app, tmp_path):
 
     w.dirty = False
     w.close()
+
+
+def test_zoom(app):
+    from PySide6.QtCore import QPoint, QPointF, Qt
+    from PySide6.QtGui import QWheelEvent
+    from tilemapper.app.main_window import MainWindow
+    w = MainWindow()
+    w.show()
+    app.processEvents()
+    v = w.view
+    z0 = v._zoom
+    v.zoom_by(1.25, False)
+    assert abs(v._zoom - z0 * 1.25) < 1e-9
+    v.zoom_by(0.8, False)
+    assert abs(v._zoom - z0) < 1e-9
+
+    def wheel(dy, phase, pixel=QPoint()):
+        pos = QPointF(v.viewport().rect().center())
+        return QWheelEvent(pos, v.viewport().mapToGlobal(pos), pixel, QPoint(0, dy),
+                           Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier, phase, False)
+
+    # a mouse wheel (no scroll phase) zooms
+    z = v._zoom
+    app.sendEvent(v.viewport(), wheel(120, Qt.ScrollPhase.NoScrollPhase))
+    assert v._zoom > z
+    # a trackpad two-finger scroll pans and leaves the zoom alone
+    z = v._zoom
+    app.sendEvent(v.viewport(), wheel(-40, Qt.ScrollPhase.ScrollUpdate, QPoint(0, -40)))
+    assert v._zoom == z
+    w.close()

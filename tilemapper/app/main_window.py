@@ -31,8 +31,10 @@ different sets can be lined up however you like.</li>
 buttons <b>To Top</b> (⌘⇧]) and <b>To Bottom</b> (⌘⇧[).
 White background around the edge of any tile is see-through, so lower tiles show.</li>
 <li><b>Delete:</b> ⌫.  <b>Duplicate:</b> ⌘D.  <b>Undo / Redo:</b> ⌘Z / ⇧⌘Z.</li>
-<li><b>Pan:</b> two-finger scroll, or hold Space and drag.  <b>Zoom:</b> pinch, or ⌘ + scroll,
-or ⌘+ / ⌘−.  <b>Fit the whole map:</b> ⌘0.</li>
+<li><b>Pan:</b> two-finger scroll on the trackpad, or hold Space and drag.</li>
+<li><b>Zoom:</b> pinch on the trackpad, turn a mouse scroll wheel, ⌘ + scroll, ⌘+ / ⌘−, or the
+<b>Zoom In</b> / <b>Zoom Out</b> toolbar buttons. Zooming centres on the pointer.
+<b>Fit the whole map:</b> ⌘0 or <b>Fit Map</b>.</li>
 </ul>
 <h3>Printing to scale</h3>
 <p>Choose <b>File ▸ Print / Export…</b> and pick <i>Full size — split into printer pages</i>.
@@ -202,7 +204,16 @@ class MainWindow(QMainWindow):
         tb.addAction(d)
         self._tb_delete = d
         tb.addSeparator()
+        zo = QAction("− Zoom Out", self)
+        zo.setToolTip("Zoom out (⌘−)")
+        zo.triggered.connect(lambda: self.view.zoom_by(0.8, False))
+        tb.addAction(zo)
+        zi = QAction("Zoom In +", self)
+        zi.setToolTip("Zoom in (⌘+)")
+        zi.triggered.connect(lambda: self.view.zoom_by(1.25, False))
+        tb.addAction(zi)
         fit = QAction("Fit Map", self)
+        fit.setToolTip("Show the whole map (⌘0)")
         fit.triggered.connect(self.view.zoom_to_fit)
         tb.addAction(fit)
         spacer = QWidget()

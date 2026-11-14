@@ -243,7 +243,6 @@ class MapView(QGraphicsView):
         self._zoom = 1.0
         self.set_zoom(0.25)
         self.centerOn(0, 0)
-        self.viewport().grabGesture(Qt.GestureType.PinchGesture)
 
     # ---------------------------------------------------------------- zoom
     def set_zoom(self, z: float, anchor_under_mouse: bool = False):
@@ -275,8 +274,12 @@ class MapView(QGraphicsView):
         self.centerOn(r.center())
 
     def wheelEvent(self, event):
+        """Mouse wheel zooms. Trackpad two-finger scroll pans; with ⌘ held it zooms."""
         mods = event.modifiers()
-        if mods & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.MetaModifier):
+        zoom_mod = mods & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.MetaModifier)
+        from_trackpad = (event.phase() != Qt.ScrollPhase.NoScrollPhase
+                         or not event.pixelDelta().isNull())
+        if zoom_mod or not from_trackpad:
             dy = event.angleDelta().y() or event.pixelDelta().y()
             if dy:
                 self.zoom_by(1.0015 ** dy)
@@ -284,14 +287,26 @@ class MapView(QGraphicsView):
             return
         super().wheelEvent(event)   # two-finger scroll pans
 
+    def _pinch(self, e) -> bool:
+        try:
+            if e.type() == QEvent.Type.NativeGesture and \
+                    e.gestureType() == Qt.NativeGestureType.ZoomNativeGesture:
+                self.zoom_by(1.0 + e.value())
+                e.accept()
+                return True
+        except AttributeError:
+            pass
+        return False
+
+    def viewportEvent(self, e):
+        # On a Mac the pinch arrives at the viewport (the drawing area), not the view itself.
+        if self._pinch(e):
+            return True
+        return super().viewportEvent(e)
+
     def event(self, e):
-        if e.type() == QEvent.Type.NativeGesture:
-            try:
-                if e.gestureType() == Qt.NativeGestureType.ZoomNativeGesture:
-                    self.zoom_by(1.0 + e.value())
-                    return True
-            except AttributeError:
-                pass
+        if self._pinch(e):
+            return True
         return super().event(e)
 
     # ------------------------------------------------- space-bar panning
