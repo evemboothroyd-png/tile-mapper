@@ -19,7 +19,7 @@ from .background_panel import BackgroundPanel
 from .qtutil import app_data_dir
 
 MAP_FILTER = "Tile Mapper maps (*.tmap)"
-TILES_MIME = "application/x-tilemapper-tiles"
+_TILE_CLIPBOARD: List[dict] = []      # copied tiles, shared by every map in this session
 MAX_UNDO = 200
 HELP_TEXT = """<h3>Building a map</h3>
 <ul>
@@ -417,13 +417,10 @@ class MainWindow(QMainWindow):
         if not ps:
             return
         from dataclasses import asdict
-        from PySide6.QtCore import QMimeData
-        data = json.dumps({"format": "tilemapper-tiles", "placements": [asdict(p) for p in ps]})
-        mime = QMimeData()
-        mime.setData(TILES_MIME, data.encode("utf-8"))
-        mime.setText(f"{len(ps)} Tile Mapper tile(s): " + ", ".join(p.code for p in ps[:20]))
-        QApplication.clipboard().setMimeData(mime)
-        self._clip = data            # fallback if the system clipboard is unavailable
+        global _TILE_CLIPBOARD
+        # kept inside the app (shared by every map you open), not on the system clipboard
+        _TILE_CLIPBOARD = [asdict(p) for p in ps]
+        self.a_paste.setEnabled(True)
         self.statusBar().showMessage(f"Copied {len(ps)} tile(s).", 3000)
 
     def cut_tiles(self):
@@ -432,24 +429,13 @@ class MainWindow(QMainWindow):
             self.scene.delete_selected()
 
     def _clipboard_placements(self) -> List[Placement]:
-        mime = QApplication.clipboard().mimeData()
-        data = None
-        if mime is not None and mime.hasFormat(TILES_MIME):
-            data = bytes(mime.data(TILES_MIME)).decode("utf-8")
-        data = data or getattr(self, "_clip", None)
-        if not data:
-            return []
-        try:
-            d = json.loads(data)
-            ps = []
-            for pd in d.get("placements", []):
-                pd = dict(pd)
-                pd.pop("uid", None)
-                pd["rotation"] = int(pd.get("rotation", 0)) % 360
-                ps.append(Placement(**pd))
-            return ps
-        except (ValueError, TypeError, KeyError):
-            return []
+        ps = []
+        for pd in _TILE_CLIPBOARD:
+            pd = dict(pd)
+            pd.pop("uid", None)          # pasted tiles get new ids
+            pd["rotation"] = int(pd.get("rotation", 0)) % 360
+            ps.append(Placement(**pd))
+        return ps
 
     def paste_tiles(self):
         """Paste centred under the mouse pointer (or the middle of the view)."""
