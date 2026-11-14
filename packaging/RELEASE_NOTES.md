@@ -1,4 +1,6 @@
-**New in 0.1.2–0.1.4:** the "Float on top" box is gone. Every tile overlaps freely, and dropping a tile on another no longer replaces it. New toolbar buttons control which tile is on top: **To Top** and **To Bottom** (also in the Tile menu, with ⌘⇧] and ⌘⇧[). White background around the edge of every tile is now see-through, so whatever is underneath shows; white inside the artwork stays white.
+**New in 0.1.5 — zooming:** pinch on the trackpad to zoom in and out, centred on the pointer. A mouse scroll wheel zooms too, while two-finger scrolling on the trackpad still moves the map around. There are also **Zoom Out** and **Zoom In** buttons on the toolbar next to **Fit Map**, plus ⌘+ / ⌘− and ⌘ + scroll. The current zoom shows at the bottom right of the window.
+
+**Earlier (0.1.2–0.1.4):** every tile overlaps freely; **To Top** and **To Bottom** buttons control which is on top; white edges of tiles are see-through.
 
 **Which file do I need?** Apple menu ▸ About This Mac.
 - *Chip: Apple M1/M2/M3/M4…* → download the file ending in **arm64.dmg**
